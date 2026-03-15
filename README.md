@@ -141,6 +141,10 @@ The `Resolve()` method takes reference of the abstraction type and fills it with
 var a Abstraction
 err := container.Resolve(&a)
 // `a` will be an implementation of the Abstraction
+
+// You can pass runtime parameters for resolver arguments.
+// Missing arguments are resolved from the container when possible.
+err = container.Resolve(&a, 10, &Circle{a: 2})
 ```
 
 Example of resolving using references:
@@ -158,6 +162,9 @@ Example of named-resolving using references:
 var s Shape
 err := container.NamedResolve(&s, "rounded")
 // `s` will be an implementation of the Shape that named rounded
+
+// NamedResolve also supports runtime parameters.
+err = container.NamedResolve(&s, "rounded", 10, &Circle{a: 2})
 ```
 
 #### Using Closures
@@ -215,6 +222,10 @@ type App struct {
 myApp := App{}
 
 err := container.Fill(&myApp)
+
+// You can also pass runtime parameters for resolver arguments.
+// Missing arguments are resolved from the container when possible.
+err = container.Fill(&myApp, 10, &Circle{a: 2})
 
 // [Typed Bindings]
 // `myApp.mailer` will be an implementation of the Mailer interface
