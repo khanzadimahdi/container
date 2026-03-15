@@ -343,6 +343,15 @@ func TestContainer_TransientLazy_With_Resolve_With_Invalid_Signature_It_Should_F
 	assert.Error(t, err, "container: resolver function signature is invalid")
 }
 
+func TestContainer_Transient_With_Resolve_That_Returns_NonError_Second_Value(t *testing.T) {
+	instance.Reset()
+
+	err := instance.Bind(func() (Shape, int) {
+		return &Circle{a: 1}, 42
+	})
+	assert.Error(t, err, "container: resolver function signature is invalid")
+}
+
 func TestContainer_NamedTransient(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}

@@ -256,6 +256,13 @@ func (c *Container) validateResolverFunction(funcType reflect.Type) error {
 		return errInvalidResolver
 	}
 
+	if retCount == 2 {
+		errorType := reflect.TypeOf((*error)(nil)).Elem()
+		if funcType.Out(1) != errorType {
+			return errInvalidResolver
+		}
+	}
+
 	resolveType := funcType.Out(0)
 	for i := 0; i < funcType.NumIn(); i++ {
 		if funcType.In(i) == resolveType {
