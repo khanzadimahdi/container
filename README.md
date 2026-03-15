@@ -204,7 +204,10 @@ err := container.Call(func(db Database) error {
 // err could be `db.Ping()` error.
 ```
 
-Caution: The `Call()` method does not support named bindings.
+// `Call()` also supports resolving named bindings via `resolve.WithName()`.
+err = container.Call(func(s Shape) {
+  // `s` will be the binding registered with name "rounded"
+}, resolve.WithName("rounded"))
 
 #### Using Structs
 The `Fill()` method takes a struct (pointer) and resolves its fields.
@@ -226,6 +229,9 @@ err := container.Fill(&myApp)
 // You can also pass runtime parameters for resolver arguments.
 // Missing arguments are resolved from the container when possible.
 err = container.Fill(&myApp, 10, &Circle{a: 2})
+
+// You can resolve a named binding using `resolve.WithName()`.
+err = container.Fill(&myApp, resolve.WithName("rounded"))
 
 // [Typed Bindings]
 // `myApp.mailer` will be an implementation of the Mailer interface

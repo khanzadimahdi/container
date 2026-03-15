@@ -1,4 +1,4 @@
-package binder
+package bind
 
 // bindOptions holds the configuration options for a binding.
 type bindOptions struct {

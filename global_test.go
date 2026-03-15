@@ -4,32 +4,32 @@ import (
 	"testing"
 
 	"github.com/golobby/container/v3"
-	"github.com/golobby/container/v3/binder"
-	"github.com/golobby/container/v3/resolver"
+	"github.com/golobby/container/v3/bind"
+	"github.com/golobby/container/v3/resolve"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGlobalBindModes(t *testing.T) {
 	tests := []struct {
 		name        string
-		bindOpts    []binder.BindOption
-		resolveOpts []resolver.ResolveOption
+		bindOpts    []bind.BindOption
+		resolveOpts []resolve.ResolveOption
 	}{
-		{name: "singleton", bindOpts: []binder.BindOption{binder.Singleton()}},
-		{name: "singleton lazy", bindOpts: []binder.BindOption{binder.Singleton(), binder.Lazy()}},
-		{name: "named singleton", bindOpts: []binder.BindOption{binder.WithName("rounded"), binder.Singleton()}, resolveOpts: []resolver.ResolveOption{resolver.WithName("rounded")}},
-		{name: "named singleton lazy", bindOpts: []binder.BindOption{binder.WithName("rounded"), binder.Singleton(), binder.Lazy()}, resolveOpts: []resolver.ResolveOption{resolver.WithName("rounded")}},
+		{name: "singleton", bindOpts: []bind.BindOption{bind.Singleton()}},
+		{name: "singleton lazy", bindOpts: []bind.BindOption{bind.Singleton(), bind.Lazy()}},
+		{name: "named singleton", bindOpts: []bind.BindOption{bind.WithName("rounded"), bind.Singleton()}, resolveOpts: []resolve.ResolveOption{resolve.WithName("rounded")}},
+		{name: "named singleton lazy", bindOpts: []bind.BindOption{bind.WithName("rounded"), bind.Singleton(), bind.Lazy()}, resolveOpts: []resolve.ResolveOption{resolve.WithName("rounded")}},
 		{name: "transient"},
-		{name: "transient lazy", bindOpts: []binder.BindOption{binder.Lazy()}},
-		{name: "named transient", bindOpts: []binder.BindOption{binder.WithName("rounded")}, resolveOpts: []resolver.ResolveOption{resolver.WithName("rounded")}},
-		{name: "named transient lazy", bindOpts: []binder.BindOption{binder.WithName("rounded"), binder.Lazy()}, resolveOpts: []resolver.ResolveOption{resolver.WithName("rounded")}},
+		{name: "transient lazy", bindOpts: []bind.BindOption{bind.Lazy()}},
+		{name: "named transient", bindOpts: []bind.BindOption{bind.WithName("rounded")}, resolveOpts: []resolve.ResolveOption{resolve.WithName("rounded")}},
+		{name: "named transient lazy", bindOpts: []bind.BindOption{bind.WithName("rounded"), bind.Lazy()}, resolveOpts: []resolve.ResolveOption{resolve.WithName("rounded")}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			container.Reset()
 
-			err := container.Default.Bind(func() Shape {
+			err := container.Bind(func() Shape {
 				return &Circle{a: 13}
 			}, tt.bindOpts...)
 			assert.NoError(t, err)
@@ -54,9 +54,9 @@ func TestResolve(t *testing.T) {
 
 	var s Shape
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = container.Resolve(&s)
@@ -68,25 +68,25 @@ func TestNamedResolve(t *testing.T) {
 
 	var s Shape
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.WithName("rounded"), binder.Singleton())
+	}, bind.WithName("rounded"), bind.Singleton())
 	assert.NoError(t, err)
 
-	err = container.NamedResolve(&s, "rounded")
+	err = container.Resolve(&s, resolve.WithName("rounded"))
 	assert.NoError(t, err)
 }
 
 func TestResolve_With_Runtime_Params(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func(x int, s Shape) Database {
+	err := container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = container.Resolve(&db, resolver.WithParams(10, &Circle{a: 2}))
+	err = container.Resolve(&db, resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -94,13 +94,13 @@ func TestResolve_With_Runtime_Params(t *testing.T) {
 func TestNamedResolve_With_Runtime_Params(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func(x int, s Shape) Database {
+	err := container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.WithName("rounded"), binder.Lazy())
+	}, bind.WithName("rounded"), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = container.NamedResolve(&db, "rounded", resolver.WithParams(10, &Circle{a: 2}))
+	err = container.Resolve(&db, resolve.WithName("rounded"), resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -108,18 +108,18 @@ func TestNamedResolve_With_Runtime_Params(t *testing.T) {
 func TestResolve_With_Runtime_Params_And_Container_Fallback(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 2}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
-	err = container.Default.Bind(func(x int, s Shape) Database {
+	err = container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = container.Resolve(&db, resolver.WithParams(10))
+	err = container.Resolve(&db, resolve.WithParams(10))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -127,18 +127,18 @@ func TestResolve_With_Runtime_Params_And_Container_Fallback(t *testing.T) {
 func TestResolve_With_Runtime_Params_Takes_Precedence_Over_Container(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 99}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
-	err = container.Default.Bind(func(s Shape) Database {
+	err = container.Bind(func(s Shape) Database {
 		return PostgreSQL{ready: s.GetArea() == 2}
 	})
 	assert.NoError(t, err)
 
 	var db Database
-	err = container.Resolve(&db, resolver.WithParams(&Circle{a: 2}))
+	err = container.Resolve(&db, resolve.WithParams(&Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -146,22 +146,22 @@ func TestResolve_With_Runtime_Params_Takes_Precedence_Over_Container(t *testing.
 func TestResolve_With_Runtime_Params_Missing_And_No_Fallback(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func(x int, s Shape) Database {
+	err := container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = container.Resolve(&db, resolver.WithParams(10))
+	err = container.Resolve(&db, resolve.WithParams(10))
 	assert.EqualError(t, err, "container: encountered error while making concrete for: container_test.Database. Error encountered: container: no concrete found for the given abstraction; the abstraction is: container_test.Shape")
 }
 
 func TestFill(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	myApp := struct {
@@ -176,16 +176,16 @@ func TestFill(t *testing.T) {
 func TestFill_With_Runtime_Params(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func(x int, s Shape) Database {
+	err := container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = container.Fill(&myApp, resolver.ResolveParams(10, &Circle{a: 2}))
+	err = container.Fill(&myApp, resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, myApp.D.Connect())
 }
@@ -193,21 +193,21 @@ func TestFill_With_Runtime_Params(t *testing.T) {
 func TestFill_With_Runtime_Params_And_Container_Fallback(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func() Shape {
+	err := container.Bind(func() Shape {
 		return &Circle{a: 2}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
-	err = container.Default.Bind(func(x int, s Shape) Database {
+	err = container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = container.Fill(&myApp, resolver.ResolveParams(10))
+	err = container.Fill(&myApp, resolve.WithParams(10))
 	assert.NoError(t, err)
 	assert.True(t, myApp.D.Connect())
 }
@@ -215,15 +215,15 @@ func TestFill_With_Runtime_Params_And_Container_Fallback(t *testing.T) {
 func TestFill_With_Runtime_Params_Missing_And_No_Fallback(t *testing.T) {
 	container.Reset()
 
-	err := container.Default.Bind(func(x int, s Shape) Database {
+	err := container.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = container.Fill(&myApp, resolver.ResolveParams(10))
+	err = container.Fill(&myApp, resolve.WithParams(10))
 	assert.EqualError(t, err, "container: no concrete found for the given abstraction; the abstraction is: container_test.Shape")
 }

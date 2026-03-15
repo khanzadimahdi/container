@@ -1,30 +1,8 @@
-package resolver
+package resolve
 
 import (
 	"reflect"
 )
-
-// paramsOptions is an internal struct used to hold parameters for resolve-time injection.
-type paramsOptions struct {
-	Params []reflect.Value
-}
-
-// DefaultParamsOptions returns a new instance of paramsOptions with default values.
-func DefaultParamsOptions() *paramsOptions {
-	return &paramsOptions{}
-}
-
-// ParamsOption is a functional option for resolve-time parameters.
-type ParamsOption func(*paramsOptions)
-
-// ResolveParams is a functional option for resolve-time parameters.
-func ResolveParams(params ...any) ParamsOption {
-	return func(o *paramsOptions) {
-		for _, param := range params {
-			o.Params = append(o.Params, reflect.ValueOf(param))
-		}
-	}
-}
 
 // resolveOptions holds runtime parameters for resolve-time injection.
 type resolveOptions struct {

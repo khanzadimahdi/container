@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"unsafe"
 
-	"github.com/golobby/container/v3/binder"
-	"github.com/golobby/container/v3/resolver"
+	"github.com/golobby/container/v3/bind"
+	"github.com/golobby/container/v3/resolve"
 )
 
 var (
@@ -53,12 +54,18 @@ type binding struct {
 	resolver    any  // resolver is the function that is responsible for making the concrete.
 	concrete    any  // concrete is the stored instance for singleton bindings.
 	isSingleton bool // isSingleton is true if the binding is a singleton.
+
+	lock sync.Mutex
 }
 
 // make resolves the binding if needed and returns the resolved concrete.
 func (b *binding) make(c *Container, params []reflect.Value) (any, error) {
-	if b.concrete != nil {
-		return b.concrete, nil
+	b.lock.Lock()
+	cached := b.concrete
+	b.lock.Unlock()
+
+	if cached != nil {
+		return cached, nil
 	}
 
 	retVal, err := c.invoke(b.resolver, params)
@@ -66,8 +73,16 @@ func (b *binding) make(c *Container, params []reflect.Value) (any, error) {
 		return nil, err
 	}
 
-	if b.isSingleton {
-		b.concrete = retVal
+	// Only cache non-nil values to preserve the previous behavior where
+	// nil results were not treated as cached singletons.
+	if b.isSingleton && retVal != nil {
+		b.lock.Lock()
+		if b.concrete == nil {
+			b.concrete = retVal
+		}
+		cached = b.concrete
+		b.lock.Unlock()
+		return cached, nil
 	}
 
 	return retVal, nil
@@ -80,6 +95,7 @@ type registerar map[reflect.Type]map[string]*binding
 // It is the entry point in the package.
 type Container struct {
 	bindings registerar
+	lock     sync.RWMutex
 }
 
 // New creates a new concrete of the Container.
@@ -91,12 +107,15 @@ func New() *Container {
 
 // Reset deletes all the existing bindings and empties the container.
 func (c *Container) Reset() {
-	clear(c.bindings)
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.bindings = make(registerar)
 }
 
 // Bind maps an abstraction to concrete and instantiates if it is a singleton binding.
-func (c *Container) Bind(resolver any, opts ...binder.BindOption) error {
-	options := binder.DefaultBindOptions()
+func (c *Container) Bind(resolver any, opts ...bind.BindOption) error {
+	options := bind.DefaultBindOptions()
 	for _, o := range opts {
 		o(options)
 	}
@@ -104,12 +123,6 @@ func (c *Container) Bind(resolver any, opts ...binder.BindOption) error {
 	reflectedResolver := reflect.TypeOf(resolver)
 	if reflectedResolver.Kind() != reflect.Func {
 		return errNonFunctionResolver
-	}
-
-	if reflectedResolver.NumOut() > 0 {
-		if _, exist := c.bindings[reflectedResolver.Out(0)]; !exist {
-			c.bindings[reflectedResolver.Out(0)] = make(map[string]*binding)
-		}
 	}
 
 	if err := c.validateResolverFunction(reflectedResolver); err != nil {
@@ -125,18 +138,28 @@ func (c *Container) Bind(resolver any, opts ...binder.BindOption) error {
 		}
 	}
 
+	b := &binding{resolver: resolver, isSingleton: options.Singleton}
 	if options.Singleton {
-		c.bindings[reflectedResolver.Out(0)][options.Name] = &binding{resolver: resolver, concrete: concrete, isSingleton: options.Singleton}
-	} else {
-		c.bindings[reflectedResolver.Out(0)][options.Name] = &binding{resolver: resolver, isSingleton: options.Singleton}
+		b.concrete = concrete
+	}
+
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if reflectedResolver.NumOut() > 0 {
+		outType := reflectedResolver.Out(0)
+		if _, exist := c.bindings[outType]; !exist {
+			c.bindings[outType] = make(map[string]*binding)
+		}
+		c.bindings[outType][options.Name] = b
 	}
 
 	return nil
 }
 
 // Resolve takes an abstraction (reference of an interface type) and fills it with the related concrete.
-func (c *Container) Resolve(abstraction any, opts ...resolver.ResolveOption) error {
-	options := resolver.DefaultResolveOptions()
+func (c *Container) Resolve(abstraction any, opts ...resolve.ResolveOption) error {
+	options := resolve.DefaultResolveOptions()
 	for _, o := range opts {
 		o(options)
 	}
@@ -146,16 +169,24 @@ func (c *Container) Resolve(abstraction any, opts ...resolver.ResolveOption) err
 		return errInvalidAbstraction
 	}
 
-	if receiverType.Kind() == reflect.Ptr {
+	if receiverType.Kind() == reflect.Pointer {
 		elem := receiverType.Elem()
 
-		if concrete, exist := c.bindings[elem][options.Name]; exist {
-			if instance, err := concrete.make(c, options.Params); err == nil {
+		c.lock.RLock()
+		nameMap, exist := c.bindings[elem]
+		var concrete *binding
+		if exist {
+			concrete, exist = nameMap[options.Name]
+		}
+		c.lock.RUnlock()
+
+		if exist {
+			instance, err := concrete.make(c, options.Params)
+			if err == nil {
 				reflect.ValueOf(abstraction).Elem().Set(reflect.ValueOf(instance))
 				return nil
-			} else {
-				return fmt.Errorf("%w for: %s. Error encountered: %w", errEncounteredError, elem.String(), err)
 			}
+			return fmt.Errorf("%w for: %s. Error encountered: %w", errEncounteredError, elem.String(), err)
 		}
 
 		return fmt.Errorf("%w; the abstraction is: %s", errNoConcreteFound, elem.String())
@@ -166,13 +197,18 @@ func (c *Container) Resolve(abstraction any, opts ...resolver.ResolveOption) err
 
 // Call takes a receiver function with one or more arguments of the abstractions (interfaces).
 // It invokes the receiver function and passes the related concretes.
-func (c *Container) Call(function any) error {
+func (c *Container) Call(function any, opts ...resolve.ResolveOption) error {
 	receiverType := reflect.TypeOf(function)
 	if receiverType == nil || receiverType.Kind() != reflect.Func {
 		return errInvalidFunction
 	}
 
-	arguments, err := c.arguments(function, nil)
+	options := resolve.DefaultResolveOptions()
+	for _, o := range opts {
+		o(options)
+	}
+
+	arguments, err := c.arguments(function, nil, options.Name)
 	if err != nil {
 		return err
 	}
@@ -194,18 +230,18 @@ func (c *Container) Call(function any) error {
 }
 
 // Fill takes a struct and resolves the fields with the tag `container:"inject"`
-func (c *Container) Fill(structure any, opts ...resolver.ParamsOption) error {
+func (c *Container) Fill(structure any, opts ...resolve.ResolveOption) error {
 	receiverType := reflect.TypeOf(structure)
 	if receiverType == nil {
 		return errInvalidStructure
 	}
 
-	if receiverType.Kind() == reflect.Ptr {
+	if receiverType.Kind() == reflect.Pointer {
 		elem := receiverType.Elem()
 		if elem.Kind() == reflect.Struct {
 			s := reflect.ValueOf(structure).Elem()
 
-			options := resolver.DefaultParamsOptions()
+			options := resolve.DefaultResolveOptions()
 			for _, o := range opts {
 				o(options)
 			}
@@ -218,14 +254,22 @@ func (c *Container) Fill(structure any, opts ...resolver.ParamsOption) error {
 
 					switch t {
 					case "type":
-						name = ""
+						name = options.Name
 					case "name":
 						name = s.Type().Field(i).Name
 					default:
 						return fmt.Errorf("%w; the field is: %s", errInvalidStructTag, s.Type().Field(i).Name)
 					}
 
-					if concrete, exist := c.bindings[f.Type()][name]; exist {
+					c.lock.RLock()
+					nameMap, exist := c.bindings[f.Type()]
+					var concrete *binding
+					if exist {
+						concrete, exist = nameMap[name]
+					}
+					c.lock.RUnlock()
+
+					if exist {
 						instance, err := concrete.make(c, options.Params)
 						if err != nil {
 							return err
@@ -257,15 +301,15 @@ func (c *Container) validateResolverFunction(funcType reflect.Type) error {
 	}
 
 	if retCount == 2 {
-		errorType := reflect.TypeOf((*error)(nil)).Elem()
+		errorType := reflect.TypeFor[error]()
 		if funcType.Out(1) != errorType {
 			return errInvalidResolver
 		}
 	}
 
 	resolveType := funcType.Out(0)
-	for i := 0; i < funcType.NumIn(); i++ {
-		if funcType.In(i) == resolveType {
+	for in := range funcType.Ins() {
+		if in == resolveType {
 			return errResolverDependsOnAbstract
 		}
 	}
@@ -275,7 +319,7 @@ func (c *Container) validateResolverFunction(funcType reflect.Type) error {
 
 // invoke calls the provided function with the given parameters and returns the result or an error if it occurs.
 func (c *Container) invoke(function any, params []reflect.Value) (any, error) {
-	arguments, err := c.arguments(function, params)
+	arguments, err := c.arguments(function, params, "")
 	if err != nil {
 		return nil, err
 	}
@@ -291,13 +335,13 @@ func (c *Container) invoke(function any, params []reflect.Value) (any, error) {
 }
 
 // arguments returns the list of resolved arguments for a function.
-func (c *Container) arguments(function any, params []reflect.Value) ([]reflect.Value, error) {
+func (c *Container) arguments(function any, params []reflect.Value, name string) ([]reflect.Value, error) {
 	reflectedFunction := reflect.TypeOf(function)
 	argumentsCount := reflectedFunction.NumIn()
 	arguments := make([]reflect.Value, argumentsCount)
 	usedParams := make([]bool, len(params))
 
-	for i := 0; i < argumentsCount; i++ {
+	for i := range argumentsCount {
 		abstraction := reflectedFunction.In(i)
 
 		if value, ok := takeParam(abstraction, params, usedParams); ok {
@@ -305,7 +349,7 @@ func (c *Container) arguments(function any, params []reflect.Value) ([]reflect.V
 			continue
 		}
 
-		if concrete, exist := c.concrete(abstraction); exist {
+		if concrete, exist := c.concrete(abstraction, name); exist {
 			instance, err := concrete.make(c, params)
 			if err != nil {
 				return nil, err
@@ -342,17 +386,38 @@ func takeParam(abstraction reflect.Type, params []reflect.Value, usedParams []bo
 }
 
 // concrete retrieves the binding for the given abstraction and name, checking for direct matches first and then for implementations.
-func (c *Container) concrete(abstraction reflect.Type) (*binding, bool) {
-	if concrete, exist := c.bindings[abstraction][""]; exist {
-		return concrete, true
+func (c *Container) concrete(abstraction reflect.Type, name string) (*binding, bool) {
+	c.lock.RLock()
+	if named, ok := c.bindings[abstraction]; ok {
+		if name != "" {
+			if b, ok2 := named[name]; ok2 {
+				c.lock.RUnlock()
+				return b, true
+			}
+		} else {
+			if b, ok2 := named[""]; ok2 {
+				c.lock.RUnlock()
+				return b, true
+			}
+		}
 	}
 
 	for boundAbstraction, namedConcretes := range c.bindings {
 		if boundAbstraction.Implements(abstraction) {
-			concrete, exists := namedConcretes[""]
-			return concrete, exists
+			if name != "" {
+				if b, ok := namedConcretes[name]; ok {
+					c.lock.RUnlock()
+					return b, true
+				}
+			} else {
+				if b, ok := namedConcretes[""]; ok {
+					c.lock.RUnlock()
+					return b, true
+				}
+			}
 		}
 	}
 
+	c.lock.RUnlock()
 	return nil, false
 }

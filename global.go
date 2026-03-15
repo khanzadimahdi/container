@@ -1,6 +1,9 @@
 package container
 
-import "github.com/golobby/container/v3/resolver"
+import (
+	"github.com/golobby/container/v3/bind"
+	"github.com/golobby/container/v3/resolve"
+)
 
 // Default is the default concrete of the Container.
 var Default = New()
@@ -10,24 +13,22 @@ func Reset() {
 	Default.Reset()
 }
 
+// Bind calls the same method of the default concrete.
+func Bind(receiver any, opts ...bind.BindOption) error {
+	return Default.Bind(receiver, opts...)
+}
+
 // Call calls the same method of the default concrete.
-func Call(receiver any) error {
-	return Default.Call(receiver)
+func Call(receiver any, opts ...resolve.ResolveOption) error {
+	return Default.Call(receiver, opts...)
 }
 
 // Resolve calls the same method of the default concrete.
-func Resolve(abstraction any, opts ...resolver.ResolveOption) error {
-	return Default.Resolve(abstraction, opts...)
-}
-
-// NamedResolve calls the same method of the default concrete.
-func NamedResolve(abstraction any, name string, opts ...resolver.ResolveOption) error {
-	opts = append([]resolver.ResolveOption{resolver.WithName(name)}, opts...)
-
+func Resolve(abstraction any, opts ...resolve.ResolveOption) error {
 	return Default.Resolve(abstraction, opts...)
 }
 
 // Fill calls the same method of the default concrete.
-func Fill(receiver any, opts ...resolver.ParamsOption) error {
+func Fill(receiver any, opts ...resolve.ResolveOption) error {
 	return Default.Fill(receiver, opts...)
 }

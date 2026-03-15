@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	"github.com/golobby/container/v3"
-	"github.com/golobby/container/v3/binder"
-	"github.com/golobby/container/v3/resolver"
+	"github.com/golobby/container/v3/bind"
+	"github.com/golobby/container/v3/resolve"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -63,7 +64,7 @@ var instance = container.New()
 func TestContainer_Singleton(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s1 Shape) {
@@ -81,7 +82,7 @@ func TestContainer_Singleton(t *testing.T) {
 func TestContainer_SingletonLazy(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s1 Shape) {
@@ -99,31 +100,31 @@ func TestContainer_SingletonLazy(t *testing.T) {
 func TestContainer_Singleton_With_Missing_Dependency_Resolve(t *testing.T) {
 	err := instance.Bind(func(db Database) Shape {
 		return &Circle{a: 13}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.EqualError(t, err, "container: no concrete found for the given abstraction; the abstraction is: container_test.Database")
 }
 
 func TestContainer_Singleton_With_Resolve_That_Returns_Nothing(t *testing.T) {
-	err := instance.Bind(func() {}, binder.Singleton())
+	err := instance.Bind(func() {}, bind.Singleton())
 	assert.Error(t, err, "container: resolver function signature is invalid")
 }
 
 func TestContainer_SingletonLazy_With_Resolve_That_Returns_Nothing(t *testing.T) {
-	err := instance.Bind(func() {}, binder.Singleton(), binder.Lazy())
+	err := instance.Bind(func() {}, bind.Singleton(), bind.Lazy())
 	assert.Error(t, err, "container: resolver function signature is invalid")
 }
 
 func TestContainer_Singleton_With_Resolve_That_Returns_Error(t *testing.T) {
 	err := instance.Bind(func() (Shape, error) {
 		return nil, errors.New("app: error")
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.Error(t, err, "app: error")
 }
 
 func TestContainer_SingletonLazy_With_Resolve_That_Returns_Error(t *testing.T) {
 	err := instance.Bind(func() (Shape, error) {
 		return nil, errors.New("app: error")
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var s Shape
@@ -138,7 +139,7 @@ func TestContainer_SingletonLazy_With_Resolve_That_Returns_Error_Should_Not_Cach
 			return &Circle{a: 5}, nil
 		}
 		return nil, errors.New("app: not ready")
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var s Shape
@@ -153,38 +154,38 @@ func TestContainer_SingletonLazy_With_Resolve_That_Returns_Error_Should_Not_Cach
 }
 
 func TestContainer_Singleton_With_NonFunction_Resolver_It_Should_Fail(t *testing.T) {
-	err := instance.Bind("STRING!", binder.Singleton())
+	err := instance.Bind("STRING!", bind.Singleton())
 	assert.EqualError(t, err, "container: the resolver must be a function")
 }
 
 func TestContainer_SingletonLazy_With_NonFunction_Resolver_It_Should_Fail(t *testing.T) {
-	err := instance.Bind("STRING!", binder.Singleton(), binder.Lazy())
+	err := instance.Bind("STRING!", bind.Singleton(), bind.Lazy())
 	assert.EqualError(t, err, "container: the resolver must be a function")
 }
 
 func TestContainer_Singleton_With_Resolvable_Arguments(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 666}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func(s Shape) Database {
 		assert.Equal(t, s.GetArea(), 666)
 		return &MySQL{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 }
 
 func TestContainer_SingletonLazy_With_Resolvable_Arguments(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 666}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func(s Shape) Database {
 		assert.Equal(t, s.GetArea(), 666)
 		return &MySQL{}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var s Shape
@@ -197,7 +198,7 @@ func TestContainer_Singleton_With_Non_Resolvable_Arguments(t *testing.T) {
 
 	err := instance.Bind(func(s Shape) Shape {
 		return &Circle{a: s.GetArea()}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.EqualError(t, err, "container: resolver function signature is invalid - depends on abstract it returns")
 }
 
@@ -206,18 +207,18 @@ func TestContainer_SingletonLazy_With_Non_Resolvable_Arguments(t *testing.T) {
 
 	err := instance.Bind(func(s Shape) Shape {
 		return &Circle{a: s.GetArea()}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.EqualError(t, err, "container: resolver function signature is invalid - depends on abstract it returns")
 }
 
 func TestContainer_NamedSingleton(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.WithName("theCircle"), binder.Singleton())
+	}, bind.WithName("theCircle"), bind.Singleton())
 	assert.NoError(t, err)
 
 	var sh Shape
-	err = instance.Resolve(&sh, resolver.WithName("theCircle"))
+	err = instance.Resolve(&sh, resolve.WithName("theCircle"))
 	assert.NoError(t, err)
 	assert.Equal(t, sh.GetArea(), 13)
 }
@@ -225,11 +226,11 @@ func TestContainer_NamedSingleton(t *testing.T) {
 func TestContainer_NamedSingletonLazy(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.WithName("theCircle"), binder.Singleton(), binder.Lazy())
+	}, bind.WithName("theCircle"), bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var sh Shape
-	err = instance.Resolve(&sh, resolver.WithName("theCircle"))
+	err = instance.Resolve(&sh, resolve.WithName("theCircle"))
 	assert.NoError(t, err)
 	assert.Equal(t, sh.GetArea(), 13)
 }
@@ -255,7 +256,7 @@ func TestContainer_Transient(t *testing.T) {
 func TestContainer_TransientLazy(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 666}
-	}, binder.Lazy())
+	}, bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s1 Shape) {
@@ -276,7 +277,7 @@ func TestContainer_Transient_With_Resolve_That_Returns_Nothing(t *testing.T) {
 }
 
 func TestContainer_TransientLazy_With_Resolve_That_Returns_Nothing(t *testing.T) {
-	err := instance.Bind(func() {}, binder.Lazy())
+	err := instance.Bind(func() {}, bind.Lazy())
 	assert.Error(t, err, "container: resolver function signature is invalid")
 }
 
@@ -304,7 +305,7 @@ func TestContainer_Transient_With_Resolve_That_Returns_Error(t *testing.T) {
 func TestContainer_TransientLazy_With_Resolve_That_Returns_Error(t *testing.T) {
 	err := instance.Bind(func() (Shape, error) {
 		return nil, errors.New("app: error")
-	}, binder.Lazy())
+	}, bind.Lazy())
 	assert.NoError(t, err)
 
 	var s Shape
@@ -318,7 +319,7 @@ func TestContainer_TransientLazy_With_Resolve_That_Returns_Error(t *testing.T) {
 			return &MySQL{}, nil
 		}
 		return nil, errors.New("app: second call error")
-	}, binder.Lazy())
+	}, bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
@@ -339,7 +340,7 @@ func TestContainer_Transient_With_Resolve_With_Invalid_Signature_It_Should_Fail(
 func TestContainer_TransientLazy_With_Resolve_With_Invalid_Signature_It_Should_Fail(t *testing.T) {
 	err := instance.Bind(func() (Shape, Database, error) {
 		return nil, nil, nil
-	}, binder.Lazy())
+	}, bind.Lazy())
 	assert.Error(t, err, "container: resolver function signature is invalid")
 }
 
@@ -355,11 +356,11 @@ func TestContainer_Transient_With_Resolve_That_Returns_NonError_Second_Value(t *
 func TestContainer_NamedTransient(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.WithName("theCircle"))
+	}, bind.WithName("theCircle"))
 	assert.NoError(t, err)
 
 	var sh Shape
-	err = instance.Resolve(&sh, resolver.WithName("theCircle"))
+	err = instance.Resolve(&sh, resolve.WithName("theCircle"))
 	assert.NoError(t, err)
 	assert.Equal(t, sh.GetArea(), 13)
 }
@@ -367,11 +368,11 @@ func TestContainer_NamedTransient(t *testing.T) {
 func TestContainer_NamedTransientLazy(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 13}
-	}, binder.WithName("theCircle"), binder.Lazy())
+	}, bind.WithName("theCircle"), bind.Lazy())
 	assert.NoError(t, err)
 
 	var sh Shape
-	err = instance.Resolve(&sh, resolver.WithName("theCircle"))
+	err = instance.Resolve(&sh, resolve.WithName("theCircle"))
 	assert.NoError(t, err)
 	assert.Equal(t, sh.GetArea(), 13)
 }
@@ -379,12 +380,12 @@ func TestContainer_NamedTransientLazy(t *testing.T) {
 func TestContainer_Call_With_Multiple_Resolving(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Database {
 		return &MySQL{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape, m Database) {
@@ -399,6 +400,25 @@ func TestContainer_Call_With_Multiple_Resolving(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestContainer_Call_With_Name_Option(t *testing.T) {
+	instance.Reset()
+
+	err := instance.Bind(func() Shape {
+		return &Circle{a: 1}
+	}, bind.Singleton())
+	assert.NoError(t, err)
+
+	err = instance.Bind(func() Shape {
+		return &Circle{a: 2}
+	}, bind.WithName("named"), bind.Singleton())
+	assert.NoError(t, err)
+
+	err = instance.Call(func(s Shape) {
+		assert.Equal(t, 2, s.GetArea())
+	}, resolve.WithName("named"))
+	assert.NoError(t, err)
+}
+
 func TestContainer_Call_With_Dependency_Missing_In_Chain(t *testing.T) {
 	var instance = container.New()
 	err := instance.Bind(func() (Database, error) {
@@ -407,7 +427,7 @@ func TestContainer_Call_With_Dependency_Missing_In_Chain(t *testing.T) {
 			return nil, err
 		}
 		return &MySQL{}, nil
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(m Database) {
@@ -428,7 +448,7 @@ func TestContainer_Call_With_Second_UnBounded_Argument(t *testing.T) {
 
 	err := instance.Bind(func() Shape {
 		return &Circle{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape, d Database) {})
@@ -440,7 +460,7 @@ func TestContainer_Call_With_A_Returning_Error(t *testing.T) {
 
 	err := instance.Bind(func() Shape {
 		return &Circle{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape) error {
@@ -454,7 +474,7 @@ func TestContainer_Call_With_A_Returning_Nil_Error(t *testing.T) {
 
 	err := instance.Bind(func() Shape {
 		return &Circle{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape) error {
@@ -468,7 +488,7 @@ func TestContainer_Call_With_Invalid_Signature(t *testing.T) {
 
 	err := instance.Bind(func() Shape {
 		return &Circle{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape) (int, error) {
@@ -480,12 +500,12 @@ func TestContainer_Call_With_Invalid_Signature(t *testing.T) {
 func TestContainer_Resolve_With_Reference_As_Resolver(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Database {
 		return &MySQL{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	var (
@@ -530,11 +550,11 @@ func TestContainer_Resolve_With_Runtime_Params(t *testing.T) {
 
 	err := instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = instance.Resolve(&db, resolver.WithParams(10, &Circle{a: 2}))
+	err = instance.Resolve(&db, resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -544,16 +564,16 @@ func TestContainer_Resolve_With_Runtime_Params_And_Container_Fallback(t *testing
 
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 2}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = instance.Resolve(&db, resolver.WithParams(10))
+	err = instance.Resolve(&db, resolve.WithParams(10))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -564,7 +584,7 @@ func TestContainer_Resolve_With_Runtime_Params_Takes_Precedence_Over_Container(t
 	// Container has Shape bound to Circle{a: 99} — runtime param must win.
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 99}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	// Transient so the resolver is called fresh each time (no cached concrete).
@@ -574,7 +594,7 @@ func TestContainer_Resolve_With_Runtime_Params_Takes_Precedence_Over_Container(t
 	assert.NoError(t, err)
 
 	var db Database
-	err = instance.Resolve(&db, resolver.WithParams(&Circle{a: 2}))
+	err = instance.Resolve(&db, resolve.WithParams(&Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect()) // would be false if container binding (a:99) was used
 }
@@ -584,11 +604,11 @@ func TestContainer_Resolve_With_Runtime_Params_Missing_And_No_Fallback(t *testin
 
 	err := instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = instance.Resolve(&db, resolver.WithParams(10))
+	err = instance.Resolve(&db, resolve.WithParams(10))
 	assert.EqualError(t, err, "container: encountered error while making concrete for: container_test.Database. Error encountered: container: no concrete found for the given abstraction; the abstraction is: container_test.Shape")
 }
 
@@ -597,11 +617,11 @@ func TestContainer_NamedResolve_With_Runtime_Params(t *testing.T) {
 
 	err := instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.WithName("runtime"), binder.Lazy())
+	}, bind.WithName("runtime"), bind.Lazy())
 	assert.NoError(t, err)
 
 	var db Database
-	err = instance.Resolve(&db, resolver.WithName("runtime"), resolver.WithParams(10, &Circle{a: 2}))
+	err = instance.Resolve(&db, resolve.WithName("runtime"), resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, db.Connect())
 }
@@ -609,17 +629,17 @@ func TestContainer_NamedResolve_With_Runtime_Params(t *testing.T) {
 func TestContainer_Fill_With_Struct_Pointer(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.WithName("C"), binder.Singleton(), binder.Lazy())
+	}, bind.WithName("C"), bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Database {
 		return &MySQL{}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
@@ -636,15 +656,37 @@ func TestContainer_Fill_With_Struct_Pointer(t *testing.T) {
 	assert.IsType(t, &MySQL{}, myApp.D)
 }
 
+func TestContainer_Fill_With_Name_Option(t *testing.T) {
+	instance.Reset()
+
+	err := instance.Bind(func() Shape {
+		return &Circle{a: 1}
+	}, bind.Singleton())
+	assert.NoError(t, err)
+
+	err = instance.Bind(func() Shape {
+		return &Circle{a: 2}
+	}, bind.WithName("named"), bind.Singleton())
+	assert.NoError(t, err)
+
+	myApp := struct {
+		S Shape `container:"type"`
+	}{}
+
+	err = instance.Fill(&myApp, resolve.WithName("named"))
+	assert.NoError(t, err)
+	assert.Equal(t, 2, myApp.S.GetArea())
+}
+
 func TestContainer_Fill_Unexported_With_Struct_Pointer(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Database {
 		return &MySQL{}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
@@ -663,7 +705,7 @@ func TestContainer_Fill_Unexported_With_Struct_Pointer(t *testing.T) {
 func TestContainer_Fill_With_Invalid_Field_It_Should_Fail(t *testing.T) {
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.WithName("C"), binder.Singleton(), binder.Lazy())
+	}, bind.WithName("C"), bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	type App struct {
@@ -715,21 +757,21 @@ func TestContainer_Fill_With_Dependency_Missing_In_Chain(t *testing.T) {
 
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 5}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() (Shape, error) {
 		var s Shape
-		if err := instance.Resolve(&s, resolver.WithName("foo")); err != nil {
+		if err := instance.Resolve(&s, resolve.WithName("foo")); err != nil {
 			return nil, err
 		}
 		return &Circle{a: 5}, nil
-	}, binder.WithName("C"), binder.Singleton(), binder.Lazy())
+	}, bind.WithName("C"), bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func() Database {
 		return &MySQL{}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	myApp := struct {
@@ -748,14 +790,14 @@ func TestContainer_Fill_With_Runtime_Params(t *testing.T) {
 
 	err := instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = instance.Fill(&myApp, resolver.ResolveParams(10, &Circle{a: 2}))
+	err = instance.Fill(&myApp, resolve.WithParams(10, &Circle{a: 2}))
 	assert.NoError(t, err)
 	assert.True(t, myApp.D.Connect())
 }
@@ -765,19 +807,19 @@ func TestContainer_Fill_With_Runtime_Params_And_Container_Fallback(t *testing.T)
 
 	err := instance.Bind(func() Shape {
 		return &Circle{a: 2}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	err = instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: x+s.GetArea() == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = instance.Fill(&myApp, resolver.ResolveParams(10))
+	err = instance.Fill(&myApp, resolve.WithParams(10))
 	assert.NoError(t, err)
 	assert.True(t, myApp.D.Connect())
 }
@@ -787,14 +829,14 @@ func TestContainer_Fill_With_Runtime_Params_Missing_And_No_Fallback(t *testing.T
 
 	err := instance.Bind(func(x int, s Shape) Database {
 		return PostgreSQL{ready: (x + s.GetArea()) == 12}
-	}, binder.Singleton(), binder.Lazy())
+	}, bind.Singleton(), bind.Lazy())
 	assert.NoError(t, err)
 
 	myApp := struct {
 		D Database `container:"type"`
 	}{}
 
-	err = instance.Fill(&myApp, resolver.ResolveParams(10))
+	err = instance.Fill(&myApp, resolve.WithParams(10))
 	assert.EqualError(t, err, "container: no concrete found for the given abstraction; the abstraction is: container_test.Shape")
 }
 
@@ -803,7 +845,7 @@ func TestContainer_Singleton_Bind_As_Concrete_But_Resolve_By_Interface(t *testin
 
 	err := instance.Bind(func() *Circle {
 		return &Circle{a: 13}
-	}, binder.Singleton())
+	}, bind.Singleton())
 	assert.NoError(t, err)
 
 	err = instance.Call(func(s Shape) {
